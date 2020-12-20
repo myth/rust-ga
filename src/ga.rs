@@ -1,182 +1,318 @@
-use super::cli::Cli;
+use super::cli::Options;
+use fmt::Display;
 use rand::{thread_rng, Rng};
+use std::fmt;
 use std::time::SystemTime;
+use structopt::clap::arg_enum;
 
 /// Interface for working with various populations
 pub trait Population {
-    fn evolve(&mut self, args: &Cli) -> f64;
+    /// Create a new population based on the given options
+    fn new(options: Options) -> Self;
+    /// Remove this?
+    fn evolve(&mut self);
 }
 
+/// TODO: Possibly add Phenotype as associated type and do some Into/From trait magic in Population bounds
 pub trait Genotype {
+    /// Create a new Genotype
+    fn new(rng: &mut impl Rng) -> Self;
     /// Mutate this genotype
     fn mutate(&mut self, rng: &mut impl Rng);
     /// Perform crossover and produce a new offspring
     fn crossover(&self, other: &Self, rng: &mut impl Rng) -> Self;
 }
 
+/// Putting fitness into different Phenotype trait for future separation of decode
 pub trait Phenotype {
     /// Evaluate the fitness of this Phenotype
-    fn evaluate(&self) -> f64;
+    fn fitness(&self) -> f64;
 }
 
-pub struct EightQueens {
-    genome: [i32; 8],
-}
-
-impl Genotype for EightQueens {
-    /// Mutate this genomy by swapping two random positions
-    fn mutate(&mut self, rng: &mut impl Rng) {
-        let a = rng.gen_range(0, 8);
-        let b = rng.gen_range(0, 8);
-        self.genome[a] = self.genome[b];
-    }
-
-    /// Create a new specimen by performing crossover with other at random index
-    fn crossover(&self, other: &Self, rng: &mut impl Rng) -> Self {
-        let mut genome = [0; 8];
-        let index = rng.gen_range(0, 8);
-
-        for i in 0..index {
-            genome[i] = self.genome[i];
-        }
-        for i in index..8 {
-            genome[i] = other.genome[i];
-        }
-
-        Self { genome }
+// These are wrapped in arg_enum since we are constructing these directly from StructOpt
+arg_enum! {
+    /// Available parent selection strategies
+    #[derive(Debug)]
+    pub enum ParentSelection {
+        RouletteWheel,
+        StochasticUniversalSampling,
+        TournamentSelection,
+        RankSelection,
     }
 }
 
-impl Phenotype for EightQueens {
-    fn evaluate(&self) -> f64 {
-        0.0
+// These are wrapped in arg_enum since we are constructing these directly from StructOpt
+arg_enum! {
+    /// Available survivor selection strategies
+    #[derive(Debug)]
+    pub enum SurvivorSelection {
+        AgeBased,
+        FitnessBased,
     }
 }
 
-/// Create a new, empty population
-pub fn create_eight_queens(population_size: i32) -> StandardPopulation<EightQueens> {
-    println!(
-        "Creating StandardPopulation with {} individuals",
-        population_size
-    );
-
-    let mut rng = thread_rng();
-    let mut genotypes = vec![];
-
-    for _ in 0..population_size {
-        genotypes.push(EightQueens { genome: rng.gen() });
-    }
-
-    StandardPopulation {
-        rng,
-        epoch: 0,
-        history: vec![],
-        genotypes,
+// These are wrapped in arg_enum since we are constructing these directly from StructOpt
+arg_enum! {
+    /// Available population models
+    #[derive(Debug)]
+    pub enum PopulationModel {
+        SteadyState,
+        Generational,
     }
 }
 
+/// Basic statistics container
+#[derive(Debug, Default)]
 struct EvolutionStats {
+    /// Which generation these stats represent
+    generation: i32,
+    /// Maximum number of generations in the evolution
+    max_generations: i32,
+    /// Best fitness achieved this generation
     fitness: f64,
+    /// The total elapsed time at this generation
+    elapsed: f32,
+    /// The total number of mutations this generation
+    mutations: i32,
+    /// The total number of crossovers this generation
+    crossovers: i32,
+}
+
+/// Individual wraps the T: Genotype + Phenotype with additional metadata
+#[derive(Copy, Clone, Debug, PartialEq, PartialOrd)]
+struct Individual<T>
+where
+    T: Genotype + Phenotype + PartialOrd,
+{
+    fitness: f64,
+    generation: i32,
+    genotype: T,
 }
 
 /// Simple sandbox population
-pub struct StandardPopulation<G> {
+#[derive(Debug)]
+pub struct StandardPopulation<T>
+where
+    T: Genotype + Phenotype + Display + PartialOrd,
+{
+    options: Options,
     rng: rand::rngs::ThreadRng,
-    epoch: i32,
+    stats: EvolutionStats,
     history: Vec<EvolutionStats>,
-    genotypes: Vec<G>,
+    population: Vec<Individual<T>>,
+    started: SystemTime,
 }
 
-impl<G> StandardPopulation<G>
+/// String representation of the statistics container
+impl fmt::Display for EvolutionStats {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "[{}/{}] F: {:.3} (Elapsed {:.4}s) C: {} M: {}",
+            self.generation,
+            self.max_generations,
+            self.fitness,
+            self.elapsed,
+            self.crossovers,
+            self.mutations
+        )
+    }
+}
+
+impl<T> Individual<T>
 where
-    G: Genotype + Phenotype,
+    T: Genotype + Phenotype + PartialOrd,
 {
-    /// Performs mutation in the population
-    fn mutate(&mut self, rate: f64) {
-        let mut count = 0;
-
-        for g in &mut self.genotypes {
-            if self.rng.gen_bool(rate) {
-                g.mutate(&mut self.rng);
-                count += 1;
-            }
+    fn crossover(&self, other: &Self, rng: &mut impl Rng) -> Self {
+        Individual {
+            generation: 0,
+            fitness: 0.0,
+            genotype: self.genotype.crossover(&other.genotype, rng),
         }
+    }
+}
 
-        if count > 0 {
-            println!("Performed {} mutations this epoch", count);
+/// Select a parent using roulette wheel selection
+fn roulette_wheel_select<'a, T>(
+    population: &'a Vec<Individual<T>>,
+    s: f64,
+    rng: &mut impl Rng,
+) -> usize
+where
+    T: Genotype + Phenotype + Display + PartialOrd,
+{
+    let mut p = 0.0;
+    let t = rng.gen_range(0.0, s);
+
+    for (i, individual) in population.iter().enumerate() {
+        p += individual.fitness;
+
+        if p >= t {
+            return i;
         }
     }
 
-    /// Performs crossover in the population
-    fn crossover(&mut self, rate: f64) {
-        let mut count = 0;
+    0
+}
 
-        for _g in &mut self.genotypes {
-            if self.rng.gen_bool(rate) {
-                count += 1;
-            }
-        }
+/// Perform mutation on a population with a given mutation rate
+fn mutate<'a, T>(population: &'a mut Vec<Individual<T>>, rate: f64, rng: &mut impl Rng) -> i32
+where
+    T: Genotype + Phenotype + Display + PartialOrd,
+{
+    let mut count = 0;
 
-        if count > 0 {
-            println!("Performed {} crossovers this epoch", count);
+    for g in population.iter_mut() {
+        if rng.gen_bool(rate) {
+            g.genotype.mutate(rng);
+            count += 1;
         }
     }
 
-    /// Perform one epoch cycle
-    fn next(&mut self, args: &Cli, start: &SystemTime) -> f64 {
-        self.epoch += 1;
+    count
+}
 
-        self.mutate(args.mutation_rate);
-        self.crossover(args.crossover_rate);
-
-        let fitness = self.rng.gen_range(0.0, 0.9);
-        let stats = EvolutionStats { fitness };
-
-        self.history.push(stats);
-
-        if self.epoch % 10 == 0 {
-            println!(
-                "[{}/{}] F: {:.2} (Elapsed {:.4}s)",
-                self.epoch,
-                args.max_epochs,
-                fitness,
-                start.elapsed().unwrap().as_secs_f32()
-            );
+/// Standard population implementation
+impl<T> StandardPopulation<T>
+where
+    T: Genotype + Phenotype + Display + PartialOrd,
+{
+    /// Evaluate the fitness of the entire population
+    fn evaluate_fitness(&mut self) {
+        for i in self.population.iter_mut() {
+            i.fitness = i.genotype.fitness();
         }
 
-        fitness
+        self.population.sort_by(|a, b| b.partial_cmp(a).unwrap());
+
+        self.stats = EvolutionStats {
+            generation: self.stats.generation + 1,
+            max_generations: self.options.max_generations,
+            fitness: self.population[0].fitness,
+            elapsed: self.started.elapsed().unwrap().as_secs_f32(),
+            ..Default::default()
+        };
+    }
+
+    /// Select parents for crossover and mutation
+    fn select_parents(&mut self) -> Vec<Individual<T>> {
+        // TODO: Optimize, move chosen selector to struct member
+        match self.options.parent_selection {
+            _ => {
+                println!("Selecting parents using {}", self.options.parent_selection);
+
+                let mut new_population: Vec<Individual<T>> = vec![];
+
+                while new_population.len() < self.options.max_generations as usize {
+                    let a =
+                        roulette_wheel_select(&new_population, self.stats.fitness, &mut self.rng);
+                    let b =
+                        roulette_wheel_select(&new_population, self.stats.fitness, &mut self.rng);
+
+                    let individual_a = &self.population[a];
+                    let individual_b = &self.population[b];
+
+                    if self.rng.gen_bool(self.options.crossover_rate) {
+                        new_population.push(individual_a.crossover(individual_b, &mut self.rng));
+                        self.stats.crossovers += 1
+                    } else {
+                        // TODO: Impl copy or find a way to move through remove()
+                        new_population.push(individual_a.crossover(individual_a, &mut self.rng));
+                    }
+                }
+
+                new_population
+            }
+        }
+    }
+
+    /// Select survivors of this generation
+    fn select_survivors(&self) -> Vec<&T> {
+        match self.options.survivor_selection {
+            _ => {
+                println!("Selecting survivors ...");
+                return vec![];
+            }
+        }
+    }
+
+    /// Advance to the next generation
+    fn next(&mut self) {
+        self.evaluate_fitness();
+
+        self.population = self.select_parents();
+        self.stats.mutations = mutate(
+            &mut self.population,
+            self.options.mutation_rate,
+            &mut self.rng,
+        );
+
+        println!("{}", self.stats);
+
+        if self.options.debug {
+            println!("Best candidate:");
+            println!("{}", &self.population[0].genotype);
+        }
     }
 }
 
 /// Implementation of the Population trait for the simple sandbox population
-impl<G> Population for StandardPopulation<G>
+impl<T> Population for StandardPopulation<T>
 where
-    G: Genotype + Phenotype,
+    T: Genotype + Phenotype + Display + PartialOrd,
 {
     /// Evolve this population based on the given command line arguments
-    fn evolve(&mut self, args: &Cli) -> f64 {
+    fn evolve(&mut self) {
         println!(
-            "Attempting to evolve Standard population to target fitness {} in maximum {} epochs",
-            args.target_fitness, args.max_epochs
+            "Attempting to evolve Standard population to target fitness {} in maximum {} generations",
+            self.options.target_fitness, self.options.max_generations
         );
 
-        let start = SystemTime::now();
-        let mut best_fitness = 0.0;
+        for _ in 0..self.options.max_generations {
+            // Advance to the next generation
+            self.next();
 
-        for _ in 1..args.max_epochs + 1 {
-            let epoch_fitness = self.next(args, &start);
-
-            if epoch_fitness > best_fitness {
-                best_fitness = epoch_fitness;
+            if self.stats.fitness >= self.options.target_fitness {
+                break;
             }
         }
 
         println!(
-            "Completed after {:.4}s with {} as best candidate",
-            start.elapsed().unwrap().as_secs_f32(),
-            best_fitness
+            "Completed after {:.4}s",
+            self.started.elapsed().unwrap().as_secs_f32(),
+        );
+    }
+
+    /// Create a new standard population
+    fn new(options: Options) -> Self {
+        println!(
+            "Creating StandardPopulation with {} individuals",
+            options.population
         );
 
-        best_fitness
+        let mut rng = thread_rng();
+        let mut population: Vec<Individual<T>> = vec![];
+
+        for _ in 0..options.population {
+            population.push(Individual {
+                generation: 0,
+                fitness: 0.0,
+                genotype: T::new(&mut rng),
+            });
+        }
+
+        let stats = EvolutionStats {
+            max_generations: options.max_generations,
+            ..Default::default()
+        };
+
+        StandardPopulation {
+            options,
+            rng,
+            stats,
+            history: vec![],
+            population,
+            started: SystemTime::now(),
+        }
     }
 }
