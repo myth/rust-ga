@@ -229,11 +229,14 @@ where
 
                 let mut new_population: Vec<Individual<T>> = vec![];
 
+                let mut total_fitness = 0.0;
+                for i in &self.population {
+                    total_fitness += i.fitness;
+                }
+
                 while new_population.len() < self.options.population as usize {
-                    let a =
-                        roulette_wheel_select(&new_population, self.stats.fitness, &mut self.rng);
-                    let b =
-                        roulette_wheel_select(&new_population, self.stats.fitness, &mut self.rng);
+                    let a = roulette_wheel_select(&new_population, total_fitness, &mut self.rng);
+                    let b = roulette_wheel_select(&new_population, total_fitness, &mut self.rng);
 
                     let individual_a = &self.population[a];
                     let individual_b = &self.population[b];
