@@ -49,9 +49,20 @@ impl Genotype for EightQueens {
 
     /// Mutate this genomy by swapping two random positions
     fn mutate(&mut self, rng: &mut impl Rng) {
-        let a = rng.gen_range(0, 8);
-        let b = rng.gen_range(0, 8);
-        self.genome[a] = self.genome[b];
+        // Random number of mutations between 1 and 5
+        let num_mutations = rng.gen_range(1, 9);
+
+        for _ in 0..num_mutations {
+            let i = rng.gen_range(0, 8);
+            // 50% change of swapping two slots or generating a new random entry
+            if rng.gen_bool(0.5) {
+                let j = rng.gen_range(0, 8);
+                self.genome[i] = self.genome[j];
+            } else {
+                let v = rng.gen_range(0, 8);
+                self.genome[i] = v;
+            }
+        }
     }
 
     /// Create a new specimen by performing crossover with other at random index

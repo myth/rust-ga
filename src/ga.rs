@@ -14,6 +14,7 @@ pub trait Population {
 }
 
 /// TODO: Possibly add Phenotype as associated type and do some Into/From trait magic in Population bounds
+/// TODO: Make this into a struct generic over T where T has bounds without Self
 pub trait Genotype {
     /// Create a new Genotype
     fn new(rng: &mut impl Rng) -> Self;
@@ -78,31 +79,6 @@ struct EvolutionStats {
     crossovers: i32,
 }
 
-/// Individual wraps the T: Genotype + Phenotype with additional metadata
-#[derive(Copy, Clone, Debug, PartialEq, PartialOrd)]
-struct Individual<T>
-where
-    T: Genotype + Phenotype + PartialOrd,
-{
-    fitness: f64,
-    generation: i32,
-    genotype: T,
-}
-
-/// Simple sandbox population
-#[derive(Debug)]
-pub struct StandardPopulation<T>
-where
-    T: Genotype + Phenotype + Display + PartialOrd,
-{
-    options: Options,
-    rng: rand::rngs::ThreadRng,
-    stats: EvolutionStats,
-    history: Vec<EvolutionStats>,
-    population: Vec<Individual<T>>,
-    started: SystemTime,
-}
-
 /// String representation of the statistics container
 impl fmt::Display for EvolutionStats {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -119,17 +95,67 @@ impl fmt::Display for EvolutionStats {
     }
 }
 
+/// Individual wraps the T: Genotype + Phenotype with additional metadata
+#[derive(Copy, Clone, Debug, PartialEq, PartialOrd)]
+struct Individual<T>
+where
+    T: Genotype + Phenotype + PartialOrd,
+{
+    fitness: f64,
+    generation: i32,
+    genotype: T,
+}
+
+/// Convenience method to evaluate the fitness of a genotype
+impl<T> Individual<T>
+where
+    T: Genotype + Phenotype + PartialOrd,
+{
+    fn evaluate(&mut self) {
+        self.fitness = self.genotype.fitness();
+    }
+}
+
+/// Convenience method to perform crossover on the underlying genotype
 impl<T> Individual<T>
 where
     T: Genotype + Phenotype + PartialOrd,
 {
     fn crossover(&self, other: &Self, rng: &mut impl Rng) -> Self {
         Individual {
-            generation: 0,
+            generation: self.generation + 1,
             fitness: 0.0,
             genotype: self.genotype.crossover(&other.genotype, rng),
         }
     }
+}
+
+/// String representation of an indididual
+impl<T> fmt::Display for Individual<T>
+where
+    T: Genotype + Phenotype + Display + PartialOrd,
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "Individual {{ F: {:.3}, G: {} }}",
+            self.fitness, self.generation
+        )
+    }
+}
+
+/// Simple sandbox population
+#[derive(Debug)]
+pub struct StandardPopulation<T>
+where
+    T: Genotype + Phenotype + Display + PartialOrd,
+{
+    options: Options,
+    rng: rand::rngs::ThreadRng,
+    stats: EvolutionStats,
+    history: Vec<EvolutionStats>,
+    population: Vec<Individual<T>>,
+    started: SystemTime,
 }
 
 /// Select a parent using roulette wheel selection
@@ -203,7 +229,7 @@ where
 
                 let mut new_population: Vec<Individual<T>> = vec![];
 
-                while new_population.len() < self.options.max_generations as usize {
+                while new_population.len() < self.options.population as usize {
                     let a =
                         roulette_wheel_select(&new_population, self.stats.fitness, &mut self.rng);
                     let b =
@@ -212,13 +238,24 @@ where
                     let individual_a = &self.population[a];
                     let individual_b = &self.population[b];
 
+                    let mut new: Individual<T>;
+
                     if self.rng.gen_bool(self.options.crossover_rate) {
-                        new_population.push(individual_a.crossover(individual_b, &mut self.rng));
+                        new = individual_a.crossover(individual_b, &mut self.rng);
                         self.stats.crossovers += 1
                     } else {
-                        // TODO: Impl copy or find a way to move through remove()
-                        new_population.push(individual_a.crossover(individual_a, &mut self.rng));
+                        // TODO: Clean this up. Need to move or copy
+                        new = Individual {
+                            generation: individual_a.generation,
+                            fitness: 0.0,
+                            genotype: individual_a
+                                .genotype
+                                .crossover(&individual_a.genotype, &mut self.rng),
+                        }
                     }
+
+                    new.evaluate();
+                    new_population.push(new);
                 }
 
                 new_population
@@ -227,11 +264,13 @@ where
     }
 
     /// Select survivors of this generation
-    fn select_survivors(&self) -> Vec<&T> {
+    fn select_survivors(&self, new_generation: &mut Vec<Individual<T>>) {
         match self.options.survivor_selection {
             _ => {
-                println!("Selecting survivors ...");
-                return vec![];
+                println!(
+                    "Selecting survivors using {}",
+                    self.options.survivor_selection
+                );
             }
         }
     }
@@ -247,11 +286,11 @@ where
             &mut self.rng,
         );
 
-        println!("{}", self.stats);
+        let best = &self.population[0];
 
+        println!("{} Best: {}", self.stats, best);
         if self.options.debug {
-            println!("Best candidate:");
-            println!("{}", &self.population[0].genotype);
+            println!("{}", best.genotype);
         }
     }
 }
@@ -267,6 +306,10 @@ where
             "Attempting to evolve Standard population to target fitness {} in maximum {} generations",
             self.options.target_fitness, self.options.max_generations
         );
+
+        if self.options.debug {
+            println!("{:?}", self.options);
+        }
 
         for _ in 0..self.options.max_generations {
             // Advance to the next generation

@@ -13,10 +13,6 @@ fn main() {
 
     println!("{} v{}", name, version);
 
-    if args.debug {
-        println!("{:?}", args);
-    }
-
     let mut pop = problems::create_eightqueens(args);
     pop.evolve();
 }
