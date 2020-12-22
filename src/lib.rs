@@ -1,5 +1,9 @@
-/// Cli module
-use super::ga::{ParentSelection, PopulationModel, SurvivorSelection};
+pub mod ea;
+pub mod problems;
+
+/// Options
+use crate::ea::population::PopulationModel;
+use crate::ea::population::{ParentSelection, SurvivorSelection};
 use structopt::StructOpt;
 
 /// Command line interface

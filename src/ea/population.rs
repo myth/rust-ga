@@ -1,7 +1,8 @@
-use super::cli::Options;
-use fmt::Display;
+use super::individual::{Genotype, Individual, Phenotype};
+use crate::Options;
 use rand::{thread_rng, Rng};
 use std::fmt;
+use std::fmt::Display;
 use std::time::SystemTime;
 use structopt::clap::arg_enum;
 
@@ -13,21 +14,14 @@ pub trait Population {
     fn evolve(&mut self);
 }
 
-/// TODO: Possibly add Phenotype as associated type and do some Into/From trait magic in Population bounds
-/// TODO: Make this into a struct generic over T where T has bounds without Self
-pub trait Genotype {
-    /// Create a new Genotype
-    fn new(rng: &mut impl Rng) -> Self;
-    /// Mutate this genotype
-    fn mutate(&mut self, rng: &mut impl Rng);
-    /// Perform crossover and produce a new offspring
-    fn crossover(&self, other: &Self, rng: &mut impl Rng) -> Self;
-}
-
-/// Putting fitness into different Phenotype trait for future separation of decode
-pub trait Phenotype {
-    /// Evaluate the fitness of this Phenotype
-    fn fitness(&self) -> f64;
+// These are wrapped in arg_enum since we are constructing these directly from StructOpt
+arg_enum! {
+    /// Available population models
+    #[derive(Debug)]
+    pub enum PopulationModel {
+        SteadyState,
+        Generational,
+    }
 }
 
 // These are wrapped in arg_enum since we are constructing these directly from StructOpt
@@ -49,16 +43,6 @@ arg_enum! {
     pub enum SurvivorSelection {
         AgeBased,
         FitnessBased,
-    }
-}
-
-// These are wrapped in arg_enum since we are constructing these directly from StructOpt
-arg_enum! {
-    /// Available population models
-    #[derive(Debug)]
-    pub enum PopulationModel {
-        SteadyState,
-        Generational,
     }
 }
 
@@ -105,69 +89,6 @@ impl Display for EvolutionStats {
             )
         }
     }
-}
-
-/// Individual wraps the T: Genotype + Phenotype with additional metadata
-#[derive(Copy, Clone, Debug, PartialEq, PartialOrd)]
-struct Individual<T>
-where
-    T: Genotype + Phenotype + PartialOrd,
-{
-    fitness: f64,
-    generation: i32,
-    genotype: T,
-}
-
-/// Convenience method to evaluate the fitness of a genotype
-impl<T> Individual<T>
-where
-    T: Genotype + Phenotype + PartialOrd,
-{
-    fn evaluate(&mut self) {
-        self.fitness = self.genotype.fitness();
-    }
-}
-
-/// Convenience method to perform crossover on the underlying genotype
-impl<T> Individual<T>
-where
-    T: Genotype + Phenotype + PartialOrd,
-{
-    fn crossover(&self, other: &Self, rng: &mut impl Rng) -> Self {
-        Individual {
-            generation: self.generation + 1,
-            fitness: 0.0,
-            genotype: self.genotype.crossover(&other.genotype, rng),
-        }
-    }
-}
-
-/// String representation of an indididual
-impl<T> Display for Individual<T>
-where
-    T: Genotype + Phenotype + Display + PartialOrd,
-{
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "Individual {{ F: {:.3}, G: {} }}",
-            self.fitness, self.generation
-        )
-    }
-}
-
-/// Simple sandbox population
-#[derive(Debug)]
-pub struct StandardPopulation<T>
-where
-    T: Genotype + Phenotype + Display + PartialOrd,
-{
-    options: Options,
-    rng: rand::rngs::ThreadRng,
-    stats: EvolutionStats,
-    population: Vec<Individual<T>>,
-    started: SystemTime,
-    last_print: f32,
 }
 
 /// Select a parent using roulette wheel selection
@@ -226,6 +147,20 @@ where
     T: Genotype + Phenotype + PartialOrd,
 {
     population.sort_by(|a, b| b.partial_cmp(a).unwrap());
+}
+
+/// Simple sandbox population
+#[derive(Debug)]
+pub struct StandardPopulation<T>
+where
+    T: Genotype + Phenotype + Display + PartialOrd,
+{
+    options: Options,
+    rng: rand::rngs::ThreadRng,
+    stats: EvolutionStats,
+    population: Vec<Individual<T>>,
+    started: SystemTime,
+    last_print: f32,
 }
 
 /// Standard population implementation

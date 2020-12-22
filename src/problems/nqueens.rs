@@ -1,17 +1,18 @@
-use super::super::ga::{Genotype, Phenotype};
+/// Implementation of the N-queens problem
+use crate::ea::{Genotype, Phenotype};
 use rand::distributions::{Distribution, Uniform};
 use rand::Rng;
 use std::fmt;
 
 // The size of the board in the N-queens problem (NxN)
-const N: usize = 16;
+const N: usize = 8;
 
 // Simple N! implementation
 fn factorial(n: u64) -> u64 {
     (1..=n).fold(1, |acc, v| acc * v)
 }
 
-// Max non-attacking queens in N-queens problem is N choose 2 = !N / K!(N-K)!
+// Max non-attacking queens in N-queens problem is N choose K=2 = !N / K!(N-K)!
 fn max_clashes() -> u32 {
     (factorial(N as u64) / (2 * factorial(N as u64 - 2))) as u32
 }

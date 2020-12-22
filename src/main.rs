@@ -1,9 +1,6 @@
-mod cli;
-mod ga;
-mod problems;
-
-use cli::Options;
-use ga::Population;
+use rust_ga::ea::population::Population;
+use rust_ga::problems;
+use rust_ga::Options;
 use structopt::StructOpt;
 
 fn main() {
