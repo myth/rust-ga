@@ -1,11 +1,11 @@
-use eightqueens::EightQueens;
+use nqueens::NQueens;
 
 use crate::{cli::Options, ga::StandardPopulation};
 
-pub mod eightqueens;
+pub mod nqueens;
 
 use crate::ga::Population;
 
-pub fn create_eightqueens(options: Options) -> StandardPopulation<EightQueens> {
-    StandardPopulation::<EightQueens>::new(options)
+pub fn create_eightqueens(options: Options) -> StandardPopulation<NQueens> {
+    StandardPopulation::<NQueens>::new(options)
 }

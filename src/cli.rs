@@ -7,24 +7,28 @@ use structopt::StructOpt;
 #[structopt(name = "rust-ga", about = "Simple genetic algorithm")]
 pub struct Options {
     /// Population size
-    #[structopt(short = "p", long = "population", default_value = "20")]
+    #[structopt(short = "p", long = "population", default_value = "100")]
     pub population: usize,
 
-    /// Maximum number of generations
-    #[structopt(short = "g", long = "generations", default_value = "50000")]
-    pub max_generations: i32,
+    /// Maximum number of generations (set to 0 to run until reaching target fitness)
+    #[structopt(short = "g", long = "generations", default_value = "0")]
+    pub max_generations: u32,
 
     /// Target fitness
     #[structopt(short = "t", long = "target", default_value = "1.0")]
     pub target_fitness: f64,
 
     /// Mutation rate
-    #[structopt(short = "m", long = "mutation", default_value = "0.25")]
+    #[structopt(short = "m", long = "mutation", default_value = "0.5")]
     pub mutation_rate: f64,
 
     /// Crossover rate
-    #[structopt(short = "c", long = "crossover", default_value = "0.1")]
+    #[structopt(short = "c", long = "crossover", default_value = "0.5")]
     pub crossover_rate: f64,
+
+    /// Whether or not to turn off elitism
+    #[structopt(long = "no-elitism")]
+    pub no_elitism: bool,
 
     /// Parent selection strategy
     #[structopt(

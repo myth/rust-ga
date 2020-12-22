@@ -68,30 +68,42 @@ struct EvolutionStats {
     /// Which generation these stats represent
     generation: i32,
     /// Maximum number of generations in the evolution
-    max_generations: i32,
+    max_generations: u32,
     /// Best fitness achieved this generation
     fitness: f64,
     /// The total elapsed time at this generation
     elapsed: f32,
     /// The total number of mutations this generation
     mutations: i32,
+    /// The total number of mutations over the course of evolution
+    total_mutations: i32,
     /// The total number of crossovers this generation
     crossovers: i32,
+    /// The total number of crossovers over the course of evolution
+    total_crossovers: i32,
 }
 
 /// String representation of the statistics container
-impl fmt::Display for EvolutionStats {
+impl Display for EvolutionStats {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "[{}/{}] F: {:.3} (Elapsed {:.4}s) C: {} M: {}",
-            self.generation,
-            self.max_generations,
-            self.fitness,
-            self.elapsed,
-            self.crossovers,
-            self.mutations
-        )
+        if self.max_generations == 0 {
+            write!(
+                f,
+                "[{}] ({:.3}s) F: {:.3} C: {} M: {}",
+                self.generation, self.elapsed, self.fitness, self.crossovers, self.mutations,
+            )
+        } else {
+            write!(
+                f,
+                "[{}/{}] ({:.3}s) F: {:.3} C: {} M: {}",
+                self.generation,
+                self.max_generations,
+                self.elapsed,
+                self.fitness,
+                self.crossovers,
+                self.mutations,
+            )
+        }
     }
 }
 
@@ -131,7 +143,7 @@ where
 }
 
 /// String representation of an indididual
-impl<T> fmt::Display for Individual<T>
+impl<T> Display for Individual<T>
 where
     T: Genotype + Phenotype + Display + PartialOrd,
 {
@@ -153,9 +165,9 @@ where
     options: Options,
     rng: rand::rngs::ThreadRng,
     stats: EvolutionStats,
-    history: Vec<EvolutionStats>,
     population: Vec<Individual<T>>,
     started: SystemTime,
+    last_print: f32,
 }
 
 /// Select a parent using roulette wheel selection
@@ -198,102 +210,127 @@ where
     count
 }
 
+/// Evaluate a collection of individuals
+fn evaluate<'a, T>(population: &'a mut Vec<Individual<T>>)
+where
+    T: Genotype + Phenotype + PartialOrd,
+{
+    for i in population.into_iter() {
+        i.evaluate();
+    }
+}
+
+/// Sort a collection of individuals
+fn sort<'a, T>(population: &'a mut Vec<Individual<T>>)
+where
+    T: Genotype + Phenotype + PartialOrd,
+{
+    population.sort_by(|a, b| b.partial_cmp(a).unwrap());
+}
+
 /// Standard population implementation
 impl<T> StandardPopulation<T>
 where
     T: Genotype + Phenotype + Display + PartialOrd,
 {
-    /// Evaluate the fitness of the entire population
-    fn evaluate_fitness(&mut self) {
-        for i in self.population.iter_mut() {
-            i.fitness = i.genotype.fitness();
-        }
-
-        self.population.sort_by(|a, b| b.partial_cmp(a).unwrap());
-
-        self.stats = EvolutionStats {
-            generation: self.stats.generation + 1,
-            max_generations: self.options.max_generations,
-            fitness: self.population[0].fitness,
-            elapsed: self.started.elapsed().unwrap().as_secs_f32(),
-            ..Default::default()
-        };
-    }
-
     /// Select parents for crossover and mutation
-    fn select_parents(&mut self) -> Vec<Individual<T>> {
+    fn select_parents(&mut self, total_fitness: f64) -> Vec<Individual<T>> {
+        let mut new_population: Vec<Individual<T>> = vec![];
+
         // TODO: Optimize, move chosen selector to struct member
         match self.options.parent_selection {
-            _ => {
-                println!("Selecting parents using {}", self.options.parent_selection);
-
-                let mut new_population: Vec<Individual<T>> = vec![];
-
-                let mut total_fitness = 0.0;
-                for i in &self.population {
-                    total_fitness += i.fitness;
-                }
-
+            ParentSelection::RouletteWheel => {
                 while new_population.len() < self.options.population as usize {
                     let a = roulette_wheel_select(&new_population, total_fitness, &mut self.rng);
-                    let b = roulette_wheel_select(&new_population, total_fitness, &mut self.rng);
-
                     let individual_a = &self.population[a];
-                    let individual_b = &self.population[b];
-
-                    let mut new: Individual<T>;
+                    let new: Individual<T>;
 
                     if self.rng.gen_bool(self.options.crossover_rate) {
+                        self.stats.crossovers += 1;
+                        let b =
+                            roulette_wheel_select(&new_population, total_fitness, &mut self.rng);
+                        let individual_b = &self.population[b];
                         new = individual_a.crossover(individual_b, &mut self.rng);
-                        self.stats.crossovers += 1
                     } else {
                         // TODO: Clean this up. Need to move or copy
-                        new = Individual {
-                            generation: individual_a.generation,
-                            fitness: 0.0,
-                            genotype: individual_a
-                                .genotype
-                                .crossover(&individual_a.genotype, &mut self.rng),
-                        }
+                        new = individual_a.crossover(individual_a, &mut self.rng);
                     }
 
-                    new.evaluate();
                     new_population.push(new);
                 }
-
-                new_population
+            }
+            _ => {
+                // TODO: Implement support for more methods
             }
         }
+
+        // If we have elitism, replace one individual with the best from the existing population
+        if !self.options.no_elitism {
+            new_population.pop();
+            new_population.push(self.population.remove(0));
+        }
+
+        new_population
     }
 
     /// Select survivors of this generation
-    fn select_survivors(&self, new_generation: &mut Vec<Individual<T>>) {
-        match self.options.survivor_selection {
-            _ => {
-                println!(
-                    "Selecting survivors using {}",
-                    self.options.survivor_selection
-                );
+    fn select_survivors(&mut self, new_generation: Vec<Individual<T>>) {
+        // Population model determines if we are replacing entire generation or
+        // performing some sort of generational mixing
+        match self.options.population_model {
+            PopulationModel::SteadyState => {
+                match self.options.survivor_selection {
+                    SurvivorSelection::FitnessBased => {
+                        // TODO: Implement support for one of the fitness based selectors like
+                        // roulette wheel or tournament etc
+                    }
+                    SurvivorSelection::AgeBased => {
+                        // TODO: Implement support
+                    }
+                }
+            }
+            PopulationModel::Generational => {
+                self.population = new_generation;
             }
         }
     }
 
     /// Advance to the next generation
     fn next(&mut self) {
-        self.evaluate_fitness();
+        self.stats.generation += 1;
+        self.stats.mutations = 0;
+        self.stats.crossovers = 0;
 
-        self.population = self.select_parents();
+        let mut total_fitness = 0.0;
+        for i in &self.population {
+            total_fitness += i.fitness;
+        }
+
+        let mut new_generation = self.select_parents(total_fitness);
         self.stats.mutations = mutate(
-            &mut self.population,
+            &mut new_generation,
             self.options.mutation_rate,
             &mut self.rng,
         );
 
+        evaluate(&mut new_generation);
+        sort(&mut new_generation);
+
+        self.select_survivors(new_generation);
         let best = &self.population[0];
 
-        println!("{} Best: {}", self.stats, best);
-        if self.options.debug {
-            println!("{}", best.genotype);
+        self.stats.fitness = best.fitness;
+        self.stats.total_mutations += self.stats.mutations;
+        self.stats.total_crossovers += self.stats.crossovers;
+        self.stats.elapsed = self.started.elapsed().unwrap().as_secs_f32();
+
+        // Output status every second
+        if self.stats.elapsed - self.last_print > 1.0 {
+            println!("{} Best: {}", self.stats, best);
+            if self.options.debug {
+                println!("{}", best.genotype);
+            }
+            self.last_print = self.stats.elapsed;
         }
     }
 }
@@ -305,37 +342,57 @@ where
 {
     /// Evolve this population based on the given command line arguments
     fn evolve(&mut self) {
-        println!(
-            "Attempting to evolve Standard population to target fitness {} in maximum {} generations",
-            self.options.target_fitness, self.options.max_generations
-        );
+        self.started = SystemTime::now();
 
         if self.options.debug {
             println!("{:?}", self.options);
         }
 
-        for _ in 0..self.options.max_generations {
-            // Advance to the next generation
-            self.next();
+        if self.options.max_generations == 0 {
+            println!(
+                "Attempting to evolve until target fitness {:.3} is met",
+                self.options.target_fitness
+            );
+        } else {
+            println!(
+                "Attempting to evolve population to target fitness {:.3} in maximum {} generations",
+                self.options.target_fitness, self.options.max_generations
+            );
+        }
 
-            if self.stats.fitness >= self.options.target_fitness {
-                break;
+        // Max generations of 0 means run until target fitness is met
+        if self.options.max_generations == 0 {
+            loop {
+                self.next();
+
+                if self.stats.fitness >= self.options.target_fitness {
+                    break;
+                }
+            }
+        } else {
+            for _ in 0..self.options.max_generations {
+                self.next();
+
+                if self.stats.fitness >= self.options.target_fitness {
+                    break;
+                }
             }
         }
 
+        let best = &self.population[0];
         println!(
-            "Completed after {:.4}s",
+            "Reached {:.3} fitness in {} generations after {:.3}s with {} mutations and {} crossovers",
+            self.stats.fitness,
+            self.stats.generation,
             self.started.elapsed().unwrap().as_secs_f32(),
+            self.stats.total_mutations,
+            self.stats.total_crossovers
         );
+        println!("{}", &best.genotype);
     }
 
     /// Create a new standard population
     fn new(options: Options) -> Self {
-        println!(
-            "Creating StandardPopulation with {} individuals",
-            options.population
-        );
-
         let mut rng = thread_rng();
         let mut population: Vec<Individual<T>> = vec![];
 
@@ -347,18 +404,20 @@ where
             });
         }
 
-        let stats = EvolutionStats {
-            max_generations: options.max_generations,
-            ..Default::default()
-        };
+        // Calculate fitness and sort the new population
+        evaluate(&mut population);
+        sort(&mut population);
 
         StandardPopulation {
-            options,
-            rng,
-            stats,
-            history: vec![],
             population,
+            stats: EvolutionStats {
+                max_generations: options.max_generations,
+                ..Default::default()
+            },
+            rng,
+            options,
             started: SystemTime::now(),
+            last_print: 0.0,
         }
     }
 }
