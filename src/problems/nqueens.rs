@@ -67,9 +67,16 @@ impl Genotype for NQueens {
 
     /// Mutate this genome in random locations
     fn mutate(&mut self, rng: &mut impl Rng) {
-        let i = rng.gen_range(0, N);
-        let v = rng.gen_range(0, N);
-        self.genome[i] = v;
+        let a = rng.gen_range(0, N);
+        let b = rng.gen_range(0, N);
+
+        if rng.gen_bool(0.5) {
+            self.genome[a] = b;
+        } else {
+            let t = self.genome[a];
+            self.genome[a] = self.genome[b];
+            self.genome[b] = t;
+        }
     }
 
     /// Create a new specimen by performing crossover with other at random index
