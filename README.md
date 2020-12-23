@@ -8,8 +8,8 @@ Simple evolutionary algorithm project to learn Rust. Code is most likely shitty.
 ```
 rust-ga v0.1.0
 Options { population: 50, max_generations: 0, target_fitness: 1.0, mutation_rate: 0.1,
-crossover_rate: 0.5, no_elitism: false, parent_selection: RouletteWheel, survivor_selection: FitnessBased,
-population_model: Generational, debug: true }
+crossover_rate: 0.5, no_elitism: false, parent_selection: RouletteWheel,
+survivor_selection: FitnessBased, population_model: Generational, debug: true }
 Attempting to evolve until target fitness 1.000 is met
 Reached 1.000 fitness in 565 generations after 0.025s with 2792 mutations and 14031 crossovers
 [0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
