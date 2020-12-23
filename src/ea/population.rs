@@ -176,14 +176,14 @@ where
         match self.options.parent_selection {
             ParentSelection::RouletteWheel => {
                 while new_population.len() < self.options.population as usize {
-                    let a = roulette_wheel_select(&new_population, total_fitness, &mut self.rng);
+                    let a = roulette_wheel_select(&self.population, total_fitness, &mut self.rng);
                     let individual_a = &self.population[a];
                     let new: Individual<T>;
 
                     if self.rng.gen_bool(self.options.crossover_rate) {
                         self.stats.crossovers += 1;
                         let b =
-                            roulette_wheel_select(&new_population, total_fitness, &mut self.rng);
+                            roulette_wheel_select(&self.population, total_fitness, &mut self.rng);
                         let individual_b = &self.population[b];
                         new = individual_a.crossover(individual_b, &mut self.rng);
                     } else {
@@ -198,6 +198,13 @@ where
                 // TODO: Implement support for more methods
             }
         }
+
+        // Mutate offspring
+        self.stats.mutations = mutate(
+            &mut new_population,
+            self.options.mutation_rate,
+            &mut self.rng,
+        );
 
         // If we have elitism, replace one individual with the best from the existing population
         if !self.options.no_elitism {
@@ -242,11 +249,6 @@ where
         }
 
         let mut new_generation = self.select_parents(total_fitness);
-        self.stats.mutations = mutate(
-            &mut new_generation,
-            self.options.mutation_rate,
-            &mut self.rng,
-        );
 
         evaluate(&mut new_generation);
         sort(&mut new_generation);
@@ -263,6 +265,13 @@ where
         if self.stats.elapsed - self.last_print > 1.0 {
             println!("{} Best: {}", self.stats, best);
             if self.options.debug {
+                println!(
+                    "{:?}",
+                    self.population
+                        .iter()
+                        .map(|i| i.fitness)
+                        .collect::<Vec<f64>>()
+                );
                 println!("{}", best.genotype);
             }
             self.last_print = self.stats.elapsed;

@@ -1,4 +1,4 @@
-use rust_ga::ea::population::Population;
+use rust_ga::ea::Population;
 use rust_ga::problems;
 use rust_ga::Options;
 use structopt::StructOpt;

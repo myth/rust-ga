@@ -5,7 +5,7 @@ use rand::Rng;
 use std::fmt;
 
 // The size of the board in the N-queens problem (NxN)
-const N: usize = 8;
+const N: usize = 20;
 
 // Simple N! implementation
 fn factorial(n: u64) -> u64 {
@@ -67,12 +67,9 @@ impl Genotype for NQueens {
 
     /// Mutate this genome in random locations
     fn mutate(&mut self, rng: &mut impl Rng) {
-        // Up to 3 point mutations at the same time
-        for _ in 0..=rng.gen_range(1, N) {
-            let i = rng.gen_range(0, N);
-            let v = rng.gen_range(0, N);
-            self.genome[i] = v;
-        }
+        let i = rng.gen_range(0, N);
+        let v = rng.gen_range(0, N);
+        self.genome[i] = v;
     }
 
     /// Create a new specimen by performing crossover with other at random index
