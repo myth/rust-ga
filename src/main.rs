@@ -10,6 +10,6 @@ fn main() {
 
     println!("{} v{}", name, version);
 
-    let mut pop = problems::create_eightqueens(args);
+    let mut pop = problems::create_tsp(args);
     pop.evolve();
 }

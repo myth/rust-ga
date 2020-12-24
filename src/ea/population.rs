@@ -1,9 +1,9 @@
 use super::individual::{Genotype, Individual, Phenotype};
 use crate::Options;
 use rand::{thread_rng, Rng};
-use std::fmt;
 use std::fmt::Display;
 use std::time::SystemTime;
+use std::{cmp::Ordering, fmt};
 use structopt::clap::arg_enum;
 
 /// Interface for working with various populations
@@ -95,6 +95,7 @@ impl Display for EvolutionStats {
 fn roulette_wheel_select<'a, T>(
     population: &'a Vec<Individual<T>>,
     s: f64,
+    minimize: bool,
     rng: &mut impl Rng,
 ) -> usize
 where
@@ -104,7 +105,11 @@ where
     let t = rng.gen_range(0.0, s);
 
     for (i, individual) in population.iter().enumerate() {
-        p += individual.fitness;
+        if minimize {
+            p += 1.0 / individual.fitness;
+        } else {
+            p += individual.fitness;
+        }
 
         if p >= t {
             return i;
@@ -142,11 +147,15 @@ where
 }
 
 /// Sort a collection of individuals
-fn sort<'a, T>(population: &'a mut Vec<Individual<T>>)
+fn sort<'a, T>(population: &'a mut Vec<Individual<T>>, reverse: bool)
 where
     T: Genotype + Phenotype + PartialOrd,
 {
-    population.sort_by(|a, b| b.partial_cmp(a).unwrap());
+    if reverse {
+        population.sort_by(|a, b| b.partial_cmp(a).unwrap_or(Ordering::Equal));
+    } else {
+        population.sort_by(|a, b| a.partial_cmp(b).unwrap_or(Ordering::Equal));
+    }
 }
 
 /// Simple sandbox population
@@ -176,14 +185,23 @@ where
         match self.options.parent_selection {
             ParentSelection::RouletteWheel => {
                 while new_population.len() < self.options.population as usize {
-                    let a = roulette_wheel_select(&self.population, total_fitness, &mut self.rng);
+                    let a = roulette_wheel_select(
+                        &self.population,
+                        total_fitness,
+                        self.options.minimize,
+                        &mut self.rng,
+                    );
                     let individual_a = &self.population[a];
                     let new: Individual<T>;
 
                     if self.rng.gen_bool(self.options.crossover_rate) {
                         self.stats.crossovers += 1;
-                        let b =
-                            roulette_wheel_select(&self.population, total_fitness, &mut self.rng);
+                        let b = roulette_wheel_select(
+                            &self.population,
+                            total_fitness,
+                            self.options.minimize,
+                            &mut self.rng,
+                        );
                         let individual_b = &self.population[b];
                         new = individual_a.crossover(individual_b, &mut self.rng);
                     } else {
@@ -245,13 +263,17 @@ where
 
         let mut total_fitness = 0.0;
         for i in &self.population {
-            total_fitness += i.fitness;
+            if self.options.minimize {
+                total_fitness += 1.0 / i.fitness;
+            } else {
+                total_fitness += i.fitness
+            }
         }
 
         let mut new_generation = self.select_parents(total_fitness);
 
         evaluate(&mut new_generation);
-        sort(&mut new_generation);
+        sort(&mut new_generation, !self.options.minimize);
 
         self.select_survivors(new_generation);
         let best = &self.population[0];
@@ -309,7 +331,9 @@ where
             loop {
                 self.next();
 
-                if self.stats.fitness >= self.options.target_fitness {
+                if (self.options.minimize && self.stats.fitness <= self.options.target_fitness)
+                    || (!self.options.minimize && self.stats.fitness >= self.options.target_fitness)
+                {
                     break;
                 }
             }
@@ -317,7 +341,9 @@ where
             for _ in 0..self.options.max_generations {
                 self.next();
 
-                if self.stats.fitness >= self.options.target_fitness {
+                if (self.options.minimize && self.stats.fitness <= self.options.target_fitness)
+                    || (!self.options.minimize && self.stats.fitness >= self.options.target_fitness)
+                {
                     break;
                 }
             }
@@ -350,7 +376,7 @@ where
 
         // Calculate fitness and sort the new population
         evaluate(&mut population);
-        sort(&mut population);
+        sort(&mut population, !options.minimize);
 
         StandardPopulation {
             population,

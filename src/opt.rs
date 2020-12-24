@@ -31,6 +31,10 @@ pub struct Options {
     #[structopt(long = "no-elitism")]
     pub no_elitism: bool,
 
+    /// Whether or not to minimize the fitness function
+    #[structopt(long = "minimize")]
+    pub minimize: bool,
+
     /// Parent selection strategy
     #[structopt(
         long = "parent-selection",
