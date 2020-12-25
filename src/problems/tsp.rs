@@ -1,49 +1,40 @@
 /// Implementation of the traveling salesman problem
 use crate::ea::{Genotype, Phenotype};
-use rand::seq::SliceRandom;
+use crate::Options;
 use rand::Rng;
-use std::fmt;
+use rand::{seq::SliceRandom, thread_rng};
+use std::{cmp::Ordering, fmt};
 
-// The coordinates of each city
-const CITIES: [[i32; 2]; 32] = [
-    [35, 51],
-    [113, 213],
-    [82, 280],
-    [322, 340],
-    [256, 352],
-    [160, 24],
-    [322, 145],
-    [12, 349],
-    [282, 20],
-    [241, 8],
-    [398, 153],
-    [182, 305],
-    [153, 257],
-    [275, 190],
-    [242, 75],
-    [19, 229],
-    [303, 352],
-    [39, 309],
-    [383, 79],
-    [226, 343],
-    [22, 356],
-    [11, 57],
-    [336, 673],
-    [99, 482],
-    [241, 81],
-    [351, 12],
-    [321, 123],
-    [111, 358],
-    [150, 77],
-    [250, 250],
-    [200, 350],
-    [299, 399],
-];
-const N: usize = CITIES.len();
+pub fn create_random_cities(n: usize) -> Vec<f64> {
+    let mut rng = thread_rng();
+    let mut cities: Vec<(i32, i32)> = Vec::with_capacity(n);
+    let mut distance_matrix: Vec<f64> = Vec::with_capacity(n * n);
+
+    // Create some random points
+    for _ in 0..n {
+        cities.push((rng.gen_range(0, 500), rng.gen_range(0, 500)));
+    }
+
+    // Calculate euclidean distance between each pair of points
+    for y in 0..n {
+        for x in 0..n {
+            let p = (cities[y].0 - cities[x].0).pow(2);
+            let q = (cities[y].1 - cities[x].1).pow(2);
+
+            distance_matrix.push((p as f64 + q as f64).sqrt());
+        }
+    }
+
+    distance_matrix
+}
 
 /// Shift the elements "from" index "to" index by an offset of "shift".
 /// "shift" will wrap by the length of the array
-fn shift_elements(genome: &mut [usize], from: usize, to: usize, shift: usize) {
+fn shift_elements(genome: &mut Vec<usize>, from: usize, to: usize, shift: usize) {
+    if from >= to {
+        panic!("from >= to, from={}, to={}", from, to);
+    }
+
     for i in (from..to).rev() {
         let pos = (i + shift) % genome.len();
         let shoved = genome[i];
@@ -53,49 +44,55 @@ fn shift_elements(genome: &mut [usize], from: usize, to: usize, shift: usize) {
     }
 }
 
-fn create_random_path(rng: &mut impl Rng) -> [usize; N] {
-    let mut genome = [0; N];
-    let mut order: Vec<usize> = (0..N).into_iter().collect();
+fn create_random_path(length: usize, rng: &mut impl Rng) -> Vec<usize> {
+    let mut genome: Vec<usize> = Vec::with_capacity(length);
 
-    order.shuffle(rng);
-
-    for (i, v) in order.into_iter().enumerate() {
-        genome[i] = v;
-    }
+    genome.extend(0..length);
+    genome.shuffle(rng);
 
     genome
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct TravelingSalesman {
-    genome: [usize; N],
+#[derive(Debug, PartialEq)]
+pub struct TravelingSalesman<'a> {
+    genome: Vec<usize>,
+    pub distances: Option<&'a Vec<f64>>,
 }
 
-impl fmt::Display for TravelingSalesman {
+impl<'a> PartialOrd for TravelingSalesman<'a> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.genome.cmp(&other.genome))
+    }
+}
+
+impl<'a> fmt::Display for TravelingSalesman<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?}", self.genome)
     }
 }
 
-impl Genotype for TravelingSalesman {
-    /// Create a new NQueens specimen
-    fn new(rng: &mut impl Rng) -> Self {
+impl<'a> Genotype for TravelingSalesman<'a> {
+    /// Create a new TSP specimen
+    fn new(rng: &mut impl Rng, options: &Options) -> Self {
         Self {
-            genome: create_random_path(rng),
+            genome: create_random_path(options.problem_size, rng),
+            distances: None,
         }
     }
 
     /// Mutate this genome in random locations
     fn mutate(&mut self, rng: &mut impl Rng) {
+        let length = self.genome.len();
+
         // 50% chance to randomize cities
         if rng.gen_bool(0.5) {
             // 80% chance to swap two random cities
             if rng.gen_bool(0.8) {
-                let a = rng.gen_range(0, N);
-                let mut b = rng.gen_range(0, N);
+                let a = rng.gen_range(0, length);
+                let mut b = rng.gen_range(0, length);
 
                 while a == b {
-                    b = rng.gen_range(0, N);
+                    b = rng.gen_range(0, length);
                 }
 
                 let tmp = self.genome[a];
@@ -103,13 +100,13 @@ impl Genotype for TravelingSalesman {
                 self.genome[b] = tmp;
             // 20% change to get a new random path
             } else {
-                self.genome = create_random_path(rng);
+                self.genome = create_random_path(length, rng);
             }
         // 50% chance to shift a subgroup around
         } else {
-            let from = rng.gen_range(0, N - 2);
-            let to = rng.gen_range(from + 1, N);
-            let shift = rng.gen_range(0, N);
+            let from = rng.gen_range(0, length - 2);
+            let to = rng.gen_range(from + 1, length);
+            let shift = rng.gen_range(0, length);
 
             shift_elements(&mut self.genome, from, to, shift);
         }
@@ -117,33 +114,31 @@ impl Genotype for TravelingSalesman {
 
     /// Create a new specimen by performing crossover with other at random index
     fn crossover(&self, other: &Self, rng: &mut impl Rng) -> Self {
-        let mut genome = [0; N];
-        let index = rng.gen_range(0, N);
+        let mut genome = other.genome.clone();
+        let index = rng.gen_range(0, self.genome.len());
 
         for i in 0..index {
             genome[i] = self.genome[i];
         }
-        for i in index..N {
-            genome[i] = other.genome[i];
-        }
 
-        Self { genome }
+        Self {
+            genome,
+            distances: self.distances,
+        }
     }
 }
 
-impl Phenotype for TravelingSalesman {
-    // TODO: Figure out a nice way to precompute distances in a lookup table
+impl<'a> Phenotype for TravelingSalesman<'a> {
     fn fitness(&self) -> f64 {
+        let length = self.genome.len();
         let mut distance: f64 = 0.0;
+        let distances = self.distances.unwrap();
 
-        for x in 0..N {
-            let a = self.genome[x];
-            let b = self.genome[(x + 1) % N];
+        for i in 0..length {
+            let x = self.genome[i];
+            let y = self.genome[(i + 1) % length];
 
-            let p = (CITIES[b][0] - CITIES[a][0]).pow(2);
-            let q = (CITIES[b][1] - CITIES[a][1]).pow(2);
-
-            distance += (p as f64 + q as f64).sqrt();
+            distance += distances[y * length + x];
         }
 
         distance as f64
@@ -153,19 +148,19 @@ impl Phenotype for TravelingSalesman {
 #[test]
 fn test_mutate() {
     // let tsp = TravelingSalesman::new(&mut thread_rng());
-    let mut cities: [usize; 5] = [1, 2, 3, 4, 5];
+    let mut cities = vec![1, 2, 3, 4, 5];
     shift_elements(&mut cities, 0, 2, 1);
     assert_eq!(cities, [3, 1, 2, 4, 5]);
 
-    cities = [1, 2, 3, 4, 5];
+    cities = vec![1, 2, 3, 4, 5];
     shift_elements(&mut cities, 3, 5, 2);
     assert_eq!(cities, [4, 5, 3, 1, 2]);
 
-    cities = [1, 2, 3, 4, 5];
+    cities = vec![1, 2, 3, 4, 5];
     shift_elements(&mut cities, 0, 3, 1);
     assert_eq!(cities, [4, 1, 2, 3, 5]);
 
-    cities = [1, 2, 3, 4, 5];
+    cities = vec![1, 2, 3, 4, 5];
     shift_elements(&mut cities, 0, 5, 5);
     assert_eq!(cities, [1, 2, 3, 4, 5]);
 }

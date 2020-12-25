@@ -1,12 +1,26 @@
 /// Options
 use crate::ea::PopulationModel;
 use crate::ea::{ParentSelection, SurvivorSelection};
+use crate::problems::Problem;
 use structopt::StructOpt;
 
 /// Command line interface
-#[derive(Debug, StructOpt)]
+#[derive(Copy, Clone, Debug, StructOpt)]
 #[structopt(name = "rust-ga", about = "Simple genetic algorithm")]
 pub struct Options {
+    /// Which problem to solve
+    #[structopt(
+        long = "problem",
+        possible_values = &Problem::variants(),
+        case_insensitive = true,
+        default_value = "NQueens"
+    )]
+    pub problem: Problem,
+
+    /// Problem size, if relevant for the selected problem
+    #[structopt(long = "problem-size")]
+    pub problem_size: usize,
+
     /// Population size
     #[structopt(short = "p", long = "population", default_value = "50")]
     pub population: usize,

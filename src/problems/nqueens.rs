@@ -1,11 +1,9 @@
 /// Implementation of the N-queens problem
 use crate::ea::{Genotype, Phenotype};
+use crate::Options;
 use rand::distributions::{Distribution, Uniform};
 use rand::Rng;
 use std::fmt;
-
-// The size of the board in the N-queens problem (NxN)
-const N: usize = 20;
 
 // Simple N! implementation
 fn factorial(n: u64) -> u64 {
@@ -13,21 +11,23 @@ fn factorial(n: u64) -> u64 {
 }
 
 // Max non-attacking queens in N-queens problem is N choose K=2 = !N / K!(N-K)!
-fn max_clashes() -> u32 {
-    (factorial(N as u64) / (2 * factorial(N as u64 - 2))) as u32
+fn max_clashes(n: usize) -> u32 {
+    (factorial(n as u64) / (2 * factorial(n as u64 - 2))) as u32
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct NQueens {
-    genome: [usize; N],
+    genome: Vec<usize>,
     max_clashes: u32,
+    problem_size: usize,
 }
 
 impl NQueens {
-    fn to_grid(&self) -> [[usize; N]; N] {
-        let mut grid = [[0; N]; N];
+    fn to_grid(&self) -> Vec<Vec<usize>> {
+        let mut grid = Vec::with_capacity(self.problem_size);
 
         for x in 0..self.genome.len() {
+            grid[self.genome[x]] = Vec::with_capacity(self.problem_size);
             grid[self.genome[x]][x] = 1;
         }
 
@@ -51,24 +51,25 @@ impl fmt::Display for NQueens {
 
 impl Genotype for NQueens {
     /// Create a new NQueens specimen
-    fn new(rng: &mut impl Rng) -> Self {
-        let mut genome = [0; N];
-        let range = Uniform::from(0..N);
+    fn new(rng: &mut impl Rng, options: &Options) -> Self {
+        let mut genome: Vec<usize> = Vec::with_capacity(options.problem_size);
+        let range = Uniform::from(0..options.problem_size);
 
-        for i in 0..N {
+        for i in 0..options.problem_size {
             genome[i] = range.sample(rng);
         }
 
         NQueens {
             genome,
-            max_clashes: max_clashes(),
+            max_clashes: max_clashes(options.problem_size),
+            problem_size: options.problem_size,
         }
     }
 
     /// Mutate this genome in random locations
     fn mutate(&mut self, rng: &mut impl Rng) {
-        let a = rng.gen_range(0, N);
-        let b = rng.gen_range(0, N);
+        let a = rng.gen_range(0, self.problem_size);
+        let b = rng.gen_range(0, self.problem_size);
 
         if rng.gen_bool(0.5) {
             self.genome[a] = b;
@@ -81,19 +82,20 @@ impl Genotype for NQueens {
 
     /// Create a new specimen by performing crossover with other at random index
     fn crossover(&self, other: &Self, rng: &mut impl Rng) -> Self {
-        let mut genome = [0; N];
-        let index = rng.gen_range(0, N);
+        let mut genome = Vec::with_capacity(self.problem_size);
+        let index = rng.gen_range(0, self.problem_size);
 
         for i in 0..index {
             genome[i] = self.genome[i];
         }
-        for i in index..N {
+        for i in index..self.problem_size {
             genome[i] = other.genome[i];
         }
 
         Self {
             genome,
-            max_clashes: max_clashes(),
+            max_clashes: max_clashes(self.problem_size),
+            problem_size: self.problem_size,
         }
     }
 }

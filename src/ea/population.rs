@@ -1,9 +1,9 @@
 use super::individual::{Genotype, Individual, Phenotype};
 use crate::Options;
 use rand::{thread_rng, Rng};
-use std::fmt::Display;
 use std::time::SystemTime;
 use std::{cmp::Ordering, fmt};
+use std::{fmt::Display, slice::IterMut};
 use structopt::clap::arg_enum;
 
 /// Interface for working with various populations
@@ -17,7 +17,7 @@ pub trait Population {
 // These are wrapped in arg_enum since we are constructing these directly from StructOpt
 arg_enum! {
     /// Available population models
-    #[derive(Debug)]
+    #[derive(Copy, Clone, Debug)]
     pub enum PopulationModel {
         SteadyState,
         Generational,
@@ -27,7 +27,7 @@ arg_enum! {
 // These are wrapped in arg_enum since we are constructing these directly from StructOpt
 arg_enum! {
     /// Available parent selection strategies
-    #[derive(Debug)]
+    #[derive(Copy, Clone, Debug)]
     pub enum ParentSelection {
         RouletteWheel,
         StochasticUniversalSampling,
@@ -39,7 +39,7 @@ arg_enum! {
 // These are wrapped in arg_enum since we are constructing these directly from StructOpt
 arg_enum! {
     /// Available survivor selection strategies
-    #[derive(Debug)]
+    #[derive(Copy, Clone, Debug)]
     pub enum SurvivorSelection {
         AgeBased,
         FitnessBased,
@@ -179,7 +179,7 @@ where
 {
     /// Select parents for crossover and mutation
     fn select_parents(&mut self, total_fitness: f64) -> Vec<Individual<T>> {
-        let mut new_population: Vec<Individual<T>> = vec![];
+        let mut new_population: Vec<Individual<T>> = Vec::with_capacity(self.options.problem_size);
 
         // TODO: Optimize, move chosen selector to struct member
         match self.options.parent_selection {
@@ -203,10 +203,18 @@ where
                             &mut self.rng,
                         );
                         let individual_b = &self.population[b];
-                        new = individual_a.crossover(individual_b, &mut self.rng);
+                        new = individual_a.crossover(
+                            individual_b,
+                            self.stats.generation,
+                            &mut self.rng,
+                        );
                     } else {
                         // TODO: Clean this up. Need to move or copy
-                        new = individual_a.crossover(individual_a, &mut self.rng);
+                        new = individual_a.crossover(
+                            individual_a,
+                            self.stats.generation,
+                            &mut self.rng,
+                        );
                     }
 
                     new_population.push(new);
@@ -299,6 +307,10 @@ where
             self.last_print = self.stats.elapsed;
         }
     }
+
+    pub fn iter_mut(&mut self) -> IterMut<Individual<T>> {
+        self.population.iter_mut()
+    }
 }
 
 /// Implementation of the Population trait for the simple sandbox population
@@ -310,19 +322,26 @@ where
     fn evolve(&mut self) {
         self.started = SystemTime::now();
 
+        // Calculate fitness and sort the new population
+        evaluate(&mut self.population);
+        sort(&mut self.population, !self.options.minimize);
+
         if self.options.debug {
             println!("{:?}", self.options);
         }
 
         if self.options.max_generations == 0 {
             println!(
-                "Attempting to evolve until target fitness {:.3} is met",
-                self.options.target_fitness
+                "Attempting to evolve {} ({}) until target fitness {:.3} is met",
+                self.options.problem, self.options.problem_size, self.options.target_fitness
             );
         } else {
             println!(
-                "Attempting to evolve population to target fitness {:.3} in maximum {} generations",
-                self.options.target_fitness, self.options.max_generations
+                "Attempting to evolve {} ({}) to target fitness {:.3} in maximum {} generations",
+                self.options.problem,
+                self.options.problem_size,
+                self.options.target_fitness,
+                self.options.max_generations
             );
         }
 
@@ -364,19 +383,15 @@ where
     /// Create a new standard population
     fn new(options: Options) -> Self {
         let mut rng = thread_rng();
-        let mut population: Vec<Individual<T>> = vec![];
+        let mut population: Vec<Individual<T>> = Vec::with_capacity(options.population);
 
         for _ in 0..options.population {
             population.push(Individual {
                 generation: 0,
                 fitness: 0.0,
-                genotype: T::new(&mut rng),
+                genotype: T::new(&mut rng, &options),
             });
         }
-
-        // Calculate fitness and sort the new population
-        evaluate(&mut population);
-        sort(&mut population, !options.minimize);
 
         StandardPopulation {
             population,

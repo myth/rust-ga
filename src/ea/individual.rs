@@ -2,11 +2,13 @@ use rand::Rng;
 use std::fmt;
 use std::fmt::Display;
 
+use crate::Options;
+
 /// TODO: Possibly add Phenotype as associated type and do some Into/From trait magic in Population bounds
 /// TODO: Make this into a struct generic over T where T has bounds without Self
 pub trait Genotype {
     /// Create a new Genotype
-    fn new(rng: &mut impl Rng) -> Self;
+    fn new(rng: &mut impl Rng, options: &Options) -> Self;
     /// Mutate this genotype
     fn mutate(&mut self, rng: &mut impl Rng);
     /// Perform crossover and produce a new offspring
@@ -45,9 +47,9 @@ impl<T> Individual<T>
 where
     T: Genotype + Phenotype + PartialOrd,
 {
-    pub fn crossover(&self, other: &Self, rng: &mut impl Rng) -> Self {
+    pub fn crossover(&self, other: &Self, generation: i32, rng: &mut impl Rng) -> Self {
         Individual {
-            generation: self.generation + 1,
+            generation,
             fitness: 0.0,
             genotype: self.genotype.crossover(&other.genotype, rng),
         }

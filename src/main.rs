@@ -10,6 +10,18 @@ fn main() {
 
     println!("{} v{}", name, version);
 
-    let mut pop = problems::create_tsp(args);
-    pop.evolve();
+    match args.problem {
+        problems::Problem::TravelingSalesman => {
+            let (mut pop, distances) = problems::create_tsp(args);
+
+            for p in pop.iter_mut() {
+                p.genotype.distances = Some(&distances);
+            }
+
+            pop.evolve();
+        }
+        _ => {
+            problems::create_nqueens(args).evolve();
+        }
+    }
 }
