@@ -22,7 +22,14 @@ pub fn create_nqueens(options: Options) -> StandardPopulation<NQueens> {
     StandardPopulation::<NQueens>::new(options)
 }
 
-pub fn create_tsp(options: Options) -> (StandardPopulation<TravelingSalesman<'static>>, Vec<f64>) {
+pub fn create_tsp(
+    mut options: Options,
+) -> (StandardPopulation<TravelingSalesman<'static>>, Vec<f64>) {
+    // Don't have crossover yet
+    options.crossover_rate = 0.0;
+    // Have to minimize fitness
+    options.minimize = true;
+
     let distances = tsp::create_random_cities(options.problem_size);
 
     (

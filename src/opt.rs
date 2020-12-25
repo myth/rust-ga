@@ -18,7 +18,7 @@ pub struct Options {
     pub problem: Problem,
 
     /// Problem size, if relevant for the selected problem
-    #[structopt(long = "problem-size")]
+    #[structopt(long = "problem-size", default_value = "16")]
     pub problem_size: usize,
 
     /// Population size
