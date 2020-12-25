@@ -25,9 +25,10 @@ pub struct NQueens {
 impl NQueens {
     fn to_grid(&self) -> Vec<Vec<usize>> {
         let mut grid = Vec::with_capacity(self.problem_size);
+        grid.resize(self.problem_size, Vec::new());
 
         for x in 0..self.genome.len() {
-            grid[self.genome[x]] = Vec::with_capacity(self.problem_size);
+            grid[self.genome[x]].resize(self.problem_size, 0);
             grid[self.genome[x]][x] = 1;
         }
 
@@ -55,8 +56,8 @@ impl Genotype for NQueens {
         let mut genome: Vec<usize> = Vec::with_capacity(options.problem_size);
         let range = Uniform::from(0..options.problem_size);
 
-        for i in 0..options.problem_size {
-            genome[i] = range.sample(rng);
+        for _ in 0..options.problem_size {
+            genome.push(range.sample(rng));
         }
 
         NQueens {
@@ -86,10 +87,10 @@ impl Genotype for NQueens {
         let index = rng.gen_range(0, self.problem_size);
 
         for i in 0..index {
-            genome[i] = self.genome[i];
+            genome.push(self.genome[i]);
         }
         for i in index..self.problem_size {
-            genome[i] = other.genome[i];
+            genome.push(other.genome[i]);
         }
 
         Self {
