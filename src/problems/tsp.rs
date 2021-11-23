@@ -12,7 +12,7 @@ pub fn create_random_cities(n: usize) -> Vec<f64> {
 
     // Create some random points
     for _ in 0..n {
-        cities.push((rng.gen_range(0, 500), rng.gen_range(0, 500)));
+        cities.push((rng.gen_range(0..500), rng.gen_range(0..500)));
     }
 
     // Calculate euclidean distance between each pair of points
@@ -88,11 +88,11 @@ impl<'a> Genotype for TravelingSalesman<'a> {
         if rng.gen_bool(0.5) {
             // 80% chance to swap two random cities
             if rng.gen_bool(0.8) {
-                let a = rng.gen_range(0, length);
-                let mut b = rng.gen_range(0, length);
+                let a = rng.gen_range(0..length);
+                let mut b = rng.gen_range(0..length);
 
                 while a == b {
-                    b = rng.gen_range(0, length);
+                    b = rng.gen_range(0..length);
                 }
 
                 let tmp = self.genome[a];
@@ -104,9 +104,9 @@ impl<'a> Genotype for TravelingSalesman<'a> {
             }
         // 50% chance to shift a subgroup around
         } else {
-            let from = rng.gen_range(0, length - 2);
-            let to = rng.gen_range(from + 1, length);
-            let shift = rng.gen_range(0, length);
+            let from = rng.gen_range(0..length - 2);
+            let to = rng.gen_range(from + 1..length);
+            let shift = rng.gen_range(0..length);
 
             shift_elements(&mut self.genome, from, to, shift);
         }
@@ -115,7 +115,7 @@ impl<'a> Genotype for TravelingSalesman<'a> {
     /// Create a new specimen by performing crossover with other at random index
     fn crossover(&self, other: &Self, rng: &mut impl Rng) -> Self {
         let mut genome = other.genome.clone();
-        let index = rng.gen_range(0, self.genome.len());
+        let index = rng.gen_range(0..self.genome.len());
 
         for i in 0..index {
             genome[i] = self.genome[i];

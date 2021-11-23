@@ -8,5 +8,5 @@ edition = "2018"
 
 [dependencies]
 log = "0.4"
-rand = "0.7"
+rand = "0.8"
 structopt = "0.3"

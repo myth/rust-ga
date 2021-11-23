@@ -69,8 +69,8 @@ impl Genotype for NQueens {
 
     /// Mutate this genome in random locations
     fn mutate(&mut self, rng: &mut impl Rng) {
-        let a = rng.gen_range(0, self.problem_size);
-        let b = rng.gen_range(0, self.problem_size);
+        let a = rng.gen_range(0..self.problem_size);
+        let b = rng.gen_range(0..self.problem_size);
 
         if rng.gen_bool(0.5) {
             self.genome[a] = b;
@@ -84,7 +84,7 @@ impl Genotype for NQueens {
     /// Create a new specimen by performing crossover with other at random index
     fn crossover(&self, other: &Self, rng: &mut impl Rng) -> Self {
         let mut genome = Vec::with_capacity(self.problem_size);
-        let index = rng.gen_range(0, self.problem_size);
+        let index = rng.gen_range(0..self.problem_size);
 
         for i in 0..index {
             genome.push(self.genome[i]);

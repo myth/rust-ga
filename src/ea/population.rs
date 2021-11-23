@@ -102,7 +102,7 @@ where
     T: Genotype + Phenotype + Display + PartialOrd,
 {
     let mut p = 0.0;
-    let t = rng.gen_range(0.0, s);
+    let t = rng.gen_range(0.0..s);
 
     for (i, individual) in population.iter().enumerate() {
         if minimize {
